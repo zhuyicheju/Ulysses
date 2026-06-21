@@ -8,7 +8,7 @@
 
 **LLM 端由 Python 实现**：Go 启动 Python 子进程，通过 JSON-RPC over stdio 进行通信。这一桥接在 Phase 2 即建立——不是可选的后期优化，而是架构的基石。
 
-**技术选型**：Go 1.23+（核心运行时）、Python 3.12+（AI 框架，通过 JSON-RPC over stdio 通信）、SQLite（存储）、Cobra + Bubbletea（CLI）、YAML + 环境变量覆盖（配置）。
+**技术选型**：Go 1.26、Python 3.12、SQLite（存储）、Cobra + Bubbletea（CLI）、YAML + 环境变量覆盖（配置）。
 
 **贯穿始终的工程原则**：
 1. **每个模块暴露 Go interface**：内部包只依赖接口，不依赖具体实现

@@ -118,7 +118,7 @@ Go 侧读取 stdout 的每一行：若包含 `method` 字段 → 通知（流块
 - 创建 `py-ai/` 目录作为 Python AI 侧：
   ```
   py-ai/
-    pyproject.toml       # 项目元数据、依赖（openai、httpx、pydantic）
+    pyproject.toml       # 项目元数据、依赖（anthropic、httpx、pydantic）
     src/ulysses_ai/
       __init__.py
       __main__.py        # 入口: python -m ulysses_ai
@@ -128,7 +128,7 @@ Go 侧读取 stdout 的每一行：若包含 `method` 字段 → 通知（流块
         llm.py           # LLM 客户端方法
       protocol.py        # JSON-RPC 2.0 类型定义
   ```
-- 依赖：`openai`、`httpx`、`pydantic`
+- 依赖：`anthropic`、`httpx`、`pydantic`
 - `python -m ulysses_ai --version` 打印版本后退出
 - **可运行检查点**：`python -m ulysses_ai --version` 正常
 

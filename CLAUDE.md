@@ -8,7 +8,7 @@
 3. **不合并**，由用户 Code Review 后手动合入
 ## 分支命名
 ```
-<type>(Task No.) subject
+<type>Task No. subject
 ```
 ## Commit 格式
 ```

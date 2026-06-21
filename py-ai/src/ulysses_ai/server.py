@@ -11,8 +11,10 @@ import asyncio
 import json
 import sys
 from typing import Any, Awaitable, Callable
+from pydantic import ValidationError
 
 from ulysses_ai.protocol import (
+    INVALID_REQUEST,
     JSONRPCError,
     JSONRPCErrorResponse,
     JSONRPCRequest,
@@ -38,20 +40,6 @@ class RPCServer:
 
     async def serve_forever(self) -> None:
         """Read requests from stdin in a loop until EOF."""
-        reader = asyncio.StreamReader()
-        protocol = asyncio.StreamReaderProtocol(reader)
-        loop = asyncio.get_event_loop()
-
-        transport, _ = await loop.connect_read_pipe(lambda: protocol, sys.stdin)
-        await loop.connect_write_pipe(lambda: protocol, sys.stdout)
-
-        # We read lines from stdin and write responses to stdout.
-        # asyncio's connect_read_pipe provides events, but for line-oriented
-        # stdio it's simpler to use a synchronous read loop in a thread.
-
-        # Shut down the pipe-based reader — we'll use an executor instead.
-        transport.close()
-
         loop = asyncio.get_event_loop()
         while True:
             line = await loop.run_in_executor(None, sys.stdin.readline)
@@ -73,46 +61,32 @@ class RPCServer:
         """Parse a single JSON line and dispatch to the registered handler."""
         # Parse the request
         try:
-            data = json.loads(line)
-        except json.JSONDecodeError:
+            data = JSONRPCRequest.model_validate_json(line)
+        except json.JSONDecodeError as e:
             self._write_response(
                 JSONRPCErrorResponse(
                     error=JSONRPCError(
                         code=PARSE_ERROR,
-                        message="Parse error: invalid JSON",
+                        message=f"Invalid JSON: {e}",
                     )
                 )
             )
             return
+        except ValidationError as e:
+            self._write_response(
+                JSONRPCErrorResponse(
+                    error=JSONRPCError(
+                        code=INVALID_REQUEST,
+                        message=f"Invalid request: {e}",
+                    ),
+                    id=None
+                )
+            )
+            return
 
-        # Extract request fields
         req_id = data.get("id")
         method = data.get("method")
         params = data.get("params")
-
-        # Must have a method
-        if not method:
-            self._write_response(
-                JSONRPCErrorResponse(
-                    id=req_id,
-                    error=JSONRPCError(
-                        code=INTERNAL_ERROR,
-                        message="Missing method field",
-                    )
-                )
-            )
-            return
-
-        # If no id, it's a notification — handle and return (no response)
-        if req_id is None:
-            # Notifications: fire-and-forget
-            handler = self._handlers.get(method)
-            if handler is not None:
-                try:
-                    await handler(params)
-                except Exception:
-                    pass  # Notifications don't get error responses
-            return
 
         # Find and invoke the handler
         handler = self._handlers.get(method)
@@ -133,13 +107,13 @@ class RPCServer:
             self._write_response(
                 JSONRPCResponse(id=req_id, result=result)
             )
-        except Exception as exc:
+        except Exception as e:
             self._write_response(
                 JSONRPCErrorResponse(
                     id=req_id,
                     error=JSONRPCError(
                         code=INTERNAL_ERROR,
-                        message=str(exc),
+                        message=str(e),
                     )
                 )
             )

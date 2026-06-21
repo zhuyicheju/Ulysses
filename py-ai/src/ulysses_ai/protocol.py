@@ -12,13 +12,11 @@ from pydantic import BaseModel, Field
 
 
 class JSONRPCRequest(BaseModel):
-    """A JSON-RPC 2.0 request or notification.
-
-    Notifications omit the `id` field and expect no response.
+    """A JSON-RPC 2.0 request
     """
 
     jsonrpc: Literal["2.0"] = "2.0"
-    id: int | str | None = None
+    id: int
     method: str
     params: dict[str, Any] | None = None
 
@@ -27,7 +25,7 @@ class JSONRPCResponse(BaseModel):
     """A JSON-RPC 2.0 success response."""
 
     jsonrpc: Literal["2.0"] = "2.0"
-    id: int | str | None = None
+    id: int
     result: Any = None
 
 
@@ -59,9 +57,13 @@ class JSONRPCNotification(BaseModel):
 JSONRPCMessage = Union[JSONRPCRequest, JSONRPCResponse, JSONRPCErrorResponse, JSONRPCNotification]
 
 
-# Standard error codes
 PARSE_ERROR = -32700
+INVALID_REQUEST = -32600
 METHOD_NOT_FOUND = -32601
+INVALID_PARAMS = -32602
 INTERNAL_ERROR = -32603
-LLM_RATE_LIMITED = -32000
-LLM_CONTEXT_TOO_LONG = -32001
+RATE_LIMIT_EXCEEDED = -32000
+CONTEXT_LENGTH_EXCEEDED = -32001
+AUTH_ERROR = -32002
+API_TIMEOUT = -32003
+MODEL_NOT_AVAILABLE = -32004

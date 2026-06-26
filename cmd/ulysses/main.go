@@ -12,12 +12,14 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/zhuyicheju/ulysses/internal/config"
+	"github.com/zhuyicheju/ulysses/internal/logger"
 )
 
 var (
 	configPath  string
 	envFilePath string
 	cfg         *config.Config
+	log         logger.Logger
 )
 
 var rootCmd = &cobra.Command{
@@ -36,10 +38,15 @@ probabilistic LLM calls.`,
 		if err != nil {
 			return fmt.Errorf("loading config: %w", err)
 		}
+
+		log, err = logger.New(cfg.Logging.Level, cfg.Logging.Format, os.Stderr)
+		if err != nil {
+			return fmt.Errorf("creating logger: %w", err)
+		}
 		return nil
 	},
 	Run: func(cmd *cobra.Command, args []string) {
-		fmt.Println("Ulysses starting...")
+		log.Info("starting Ulysses")
 	},
 }
 
@@ -83,7 +90,11 @@ var runCmd = &cobra.Command{
 
 func main() {
 	if err := rootCmd.Execute(); err != nil {
-		fmt.Fprintln(os.Stderr, err)
+		if log != nil {
+			log.Error("command failed", "error", err)
+		} else {
+			fmt.Fprintln(os.Stderr, err)
+		}
 		os.Exit(1)
 	}
 }

@@ -137,7 +137,7 @@ Go 侧读取 stdout 的每一行：若包含 `method` 字段 → 通知（流块
 - 在 `internal/config/` 中定义 `Config` 结构体（YAML 标签）
 - 从 `ulysses.yaml` 加载，环境变量覆盖（`ULYSSES_` 前缀）
 - 配置包含：
-  - `llm`：model、base_url、api_key（从环境变量）、max_tokens
+  - `llm`：model、base_url、api_key（从环境变量（.env））、max_tokens···
   - `python`：python 解释器路径、`py-ai/` 模块路径
   - `agent`：max_iterations、timeout
   - `logging`：level、format

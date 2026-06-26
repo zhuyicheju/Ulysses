@@ -1,15 +1,6 @@
 # 代码提交规范
 ## 工作流
-1. 创建 worktree 分支：
-   ```bash
-   git worktree add ../claude/worktree/分支名 -b 分支名 master
-   ```
-2. 在 worktree 中修改并提交
-3. **不合并**，由用户 Code Review 后手动合入
-## 分支命名
-```
-<type>Task No. subject
-```
+每次任务都需要进行git commit
 ## Commit 格式
 ```
 <type>(<scope>): <subject>

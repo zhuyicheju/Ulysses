@@ -1,0 +1,21 @@
+# Ulysses Agent Runtime Configuration
+# Values can be overridden by environment variables (ULYSSES_ prefix).
+# See docs/plan.md for full specification.
+
+llm:
+  model: claude-sonnet-4-6
+  base_url: https://api.anthropic.com
+  # api_key: set via ULYSSES_LLM_API_KEY env var or .env file
+  max_tokens: 4096
+
+python:
+  interpreter: python3
+  module_path: py-ai
+
+agent:
+  max_iterations: 50
+  timeout: 5m
+
+logging:
+  level: info     # debug, info, warn, error
+  format: json    # json or text

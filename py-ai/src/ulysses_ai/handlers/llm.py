@@ -215,15 +215,191 @@ async def chat(params: dict[str, Any] | None) -> dict[str, Any]:
     return response.model_dump(exclude_none=True)
 
 
-async def chat_stream(params: dict[str, Any] | None) -> list[dict[str, Any]]:
-    """Streaming chat completion.
+async def chat_stream(
+    params: dict[str, Any] | None,
+    send_notification: Any = None,
+) -> dict[str, Any]:
+    """Streaming chat completion via Anthropic Messages streaming API.
 
-    Expected params: same as chat.
-    Returns a list of stream events; each chunk is also sent as a notification
-    during streaming via stream/chunk.
+    Maps Anthropic SSE events to JSON-RPC notifications emitted via
+    *send_notification*. Returns a final result with ``status``.
+
+    Phase 1 errors (validation failures, auth errors before any event is
+    emitted) are raised as :class:`JSONRPCException` so the server produces a
+    standard JSON-RPC error response.
+
+    Phase 2 errors (connection lost during streaming, after at least one
+    event has been sent) produce a ``stream/error`` notification followed
+    by a final response with ``status: "error"``.
     """
-    # Phase 2.3.2: Implement streaming
-    raise NotImplementedError("chat_stream not yet implemented")
+    if send_notification is None:
+        raise RuntimeError("chat_stream handler requires send_notification")
+
+    # --- Phase 1: validation (same rules as ``chat``) -----------------------
+    if params is None:
+        raise JSONRPCException(INVALID_PARAMS, "params is required")
+
+    model = params.get("model")
+    if not model:
+        raise JSONRPCException(INVALID_PARAMS, "model is required")
+
+    messages = params.get("messages")
+    if not messages:
+        raise JSONRPCException(INVALID_PARAMS, "messages is required")
+
+    max_tokens = params.get("max_tokens")
+    if max_tokens is None:
+        raise JSONRPCException(INVALID_PARAMS, "max_tokens is required")
+
+    client = _get_client()
+
+    kwargs: dict[str, Any] = {
+        "model": model,
+        "messages": messages,
+        "max_tokens": max_tokens,
+    }
+    for key in _OPTIONAL_PARAMS:
+        if key in params:
+            kwargs[key] = params[key]
+
+    # --- Phase 2: stream and map events to notifications --------------------
+    any_event_sent = False
+    try:
+        async with client.messages.stream(**kwargs) as stream:
+            async for event in stream:
+                await _handle_stream_event(event, send_notification)
+                any_event_sent = True
+    except JSONRPCException:
+        # Validation errors raised by _handle_stream_event pass through.
+        raise
+    except Exception as exc:
+        error_code, error_message = _map_api_error(exc)
+        if not any_event_sent:
+            # Phase 1: no events sent → standard JSON-RPC error response.
+            raise JSONRPCException(
+                error_code, error_message,
+                data={"type": type(exc).__name__, "detail": str(exc)},
+            ) from exc
+        # Phase 2: some events already sent → notify Go side of the error.
+        logger.warning(
+            "stream error after events sent",
+            extra={"code": error_code, "err_msg": error_message},
+        )
+        await send_notification("stream/error", {
+            "code": error_code,
+            "message": error_message,
+        })
+        return {
+            "status": "error",
+            "error": {"code": error_code, "message": error_message},
+        }
+
+    return {"status": "completed"}
+
+
+async def _handle_stream_event(
+    event: Any,
+    send_notification: Any,
+) -> None:
+    """Map a single Anthropic RawMessageStreamEvent to a JSON-RPC notification.
+
+    Uses ``model_dump(exclude_none=True)`` for SDK event objects and falls
+    back to plain dict access so that the same code works with mocks.
+    """
+    event_type = event.type
+
+    if event_type == "message_start":
+        msg = event.message
+        if not isinstance(msg, dict):
+            msg = msg.model_dump(exclude_none=True)
+        await send_notification("stream/message_start", {
+            "message": {
+                "id": msg["id"],
+                "type": msg["type"],
+                "role": msg["role"],
+                "model": msg["model"],
+            },
+        })
+
+    elif event_type == "content_block_start":
+        block = event.content_block
+        if not isinstance(block, dict):
+            block = block.model_dump(exclude_none=True)
+        await send_notification("stream/content_block_start", {
+            "index": event.index,
+            "content_block": block,
+        })
+
+    elif event_type == "content_block_delta":
+        delta = event.delta
+        if not isinstance(delta, dict):
+            delta = delta.model_dump(exclude_none=True)
+        await send_notification("stream/content_block_delta", {
+            "index": event.index,
+            "delta": delta,
+        })
+
+    elif event_type == "content_block_stop":
+        await send_notification("stream/content_block_stop", {
+            "index": event.index,
+        })
+
+    elif event_type == "message_delta":
+        delta = event.delta
+        if not isinstance(delta, dict):
+            delta = delta.model_dump(exclude_none=True)
+        usage = event.usage
+        if not isinstance(usage, dict):
+            usage = usage.model_dump(exclude_none=True)
+        await send_notification("stream/message_delta", {
+            "delta": delta,
+            "usage": usage,
+        })
+
+    elif event_type == "message_stop":
+        await send_notification("stream/message_stop", {})
+
+    elif event_type == "ping":
+        # Optional heartbeat — Go side ignores these.
+        pass
+
+    else:
+        logger.debug("unknown stream event type", extra={"type": event_type})
+
+
+def _map_api_error(exc: Exception) -> tuple[int, str]:
+    """Map an Anthropic SDK exception to (error_code, error_message).
+
+    Same mapping as the ``except`` blocks in :func:`chat`, but returns
+    values instead of raising.
+    """
+    if isinstance(exc, RateLimitError):
+        return RATE_LIMIT_EXCEEDED, "Rate limit exceeded"
+    if isinstance(exc, AuthenticationError):
+        return AUTH_ERROR, "Authentication failed"
+    if isinstance(exc, PermissionDeniedError):
+        return AUTH_ERROR, "Permission denied"
+    if isinstance(exc, BadRequestError):
+        body = getattr(exc, "body", None)
+        if body and isinstance(body, dict):
+            error_obj = body.get("error", {}) if isinstance(body.get("error"), dict) else {}
+            if error_obj.get("type") == "context_length_exceeded":
+                return CONTEXT_LENGTH_EXCEEDED, "Context length exceeded"
+        err_msg = str(exc).lower()
+        if any(kw in err_msg for kw in ("context", "too long", "too large")):
+            return CONTEXT_LENGTH_EXCEEDED, "Context length exceeded"
+        return INVALID_PARAMS, f"Invalid parameters: {exc}"
+    if isinstance(exc, NotFoundError):
+        return MODEL_NOT_AVAILABLE, f"Model not available: {exc}"
+    if isinstance(exc, APITimeoutError):
+        return API_TIMEOUT, "API request timed out"
+    if isinstance(exc, APIConnectionError):
+        return API_TIMEOUT, "API connection error"
+    if isinstance(exc, InternalServerError):
+        return INTERNAL_ERROR, f"Anthropic API internal error: {exc}"
+    if isinstance(exc, APIStatusError):
+        return INTERNAL_ERROR, f"API error (HTTP {exc.status_code}): {exc}"
+    return INTERNAL_ERROR, str(exc)
 
 
 async def count_tokens(params: dict[str, Any] | None) -> dict[str, Any]:
@@ -251,5 +427,13 @@ def register_all(
     configure(base_url=base_url, api_key=api_key)
     server.register("ping", ping)
     server.register("chat", chat)
-    server.register("chat_stream", chat_stream)
+
+    # chat_stream needs send_notification — wrap in closure for safety.
+    async def _chat_stream_handler(
+        params: dict[str, Any] | None,
+        send_notification: Any = None,
+    ) -> dict[str, Any]:
+        return await chat_stream(params, send_notification)
+
+    server.register("chat_stream", _chat_stream_handler)
     server.register("count_tokens", count_tokens)

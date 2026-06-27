@@ -8,6 +8,8 @@ Stderr is reserved exclusively for logging.
 from __future__ import annotations
 
 import asyncio
+import functools
+import inspect
 import json
 import logging
 import sys
@@ -92,6 +94,31 @@ class RPCServer:
             logger.warning("cannot write response: stdout pipe closed")
         except OSError as e:
             logger.error("failed to write response to stdout", extra={"error": str(e)})
+
+    async def _write_notification(
+        self, request_id: int, method: str, params: dict[str, Any]
+    ) -> None:
+        """Write a JSON-RPC notification to stdout as a single JSON line.
+
+        Notifications have a ``method`` field but no ``id``. The *request_id*
+        is injected into ``params`` so the Go side can correlate notifications
+        to the originating request.
+        """
+        notification = JSONRPCNotification(
+            method=method,
+            params={"request_id": request_id, **params},
+        )
+        try:
+            data = notification.model_dump(exclude_none=True)
+            async with self._write_lock:
+                sys.stdout.write(json.dumps(data) + "\n")
+                sys.stdout.flush()
+        except BrokenPipeError:
+            logger.warning("cannot write notification: stdout pipe closed")
+        except OSError as e:
+            logger.error(
+                "failed to write notification to stdout", extra={"error": str(e)}
+            )
 
     async def _handle_line(self, line: str) -> None:
         """Parse a single JSON line and dispatch to the registered handler.
@@ -187,7 +214,18 @@ class RPCServer:
                 return
 
             try:
-                result = await handler(params)
+                # If the handler accepts a second argument, pass a
+                # send_notification callback so it can emit streaming
+                # notifications during execution.  Non-streaming handlers
+                # receive only ``params`` so their signatures stay unchanged.
+                send_notification = functools.partial(
+                    self._write_notification, req_id
+                )
+                sig = inspect.signature(handler)
+                if len(sig.parameters) >= 2:
+                    result = await handler(params, send_notification)
+                else:
+                    result = await handler(params)
                 await self._write_response(
                     JSONRPCResponse(id=req_id, result=result)
                 )

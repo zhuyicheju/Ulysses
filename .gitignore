@@ -1,4 +1,7 @@
 .claude
+.vscode
+
+.env
 
 # Build output
 bin/
@@ -11,3 +14,4 @@ dist/
 build/
 .venv/
 *.egg
+.pytest_cache/

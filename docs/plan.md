@@ -203,7 +203,7 @@ Go 侧读取 stdout 的每一行：若包含 `method` 字段 → 通知（流块
 - **可运行检查点**：注册；使用 mock LLM 服务端测试通过。加入系统测试，读取.env下配置进行真实api发送
 
 
-### Task 2.3.1：Python 侧——LLM chat_stream
+### Task 2.3.2：Python 侧——LLM chat_stream
 - 实现于 `ulysses_ai/handlers/llm.py`：
   - `chat_stream(params) -> [stream_events]`：流式对话补全,见api-spec
 - 使用 `Anthropic` Python SDK

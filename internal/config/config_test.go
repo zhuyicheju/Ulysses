@@ -294,8 +294,8 @@ func TestLoadDotEnv_ValidFile_SetsEnvVars(t *testing.T) {
 
 	// Clean up env vars after test
 	t.Cleanup(func() {
-		os.Unsetenv("TEST_KEY_1")
-		os.Unsetenv("TEST_KEY_2")
+		_ = os.Unsetenv("TEST_KEY_1")
+		_ = os.Unsetenv("TEST_KEY_2")
 	})
 
 	err := LoadDotEnv(envPath)
@@ -324,8 +324,8 @@ func TestLoadDotEnv_SkipsEmptyLines(t *testing.T) {
 	writeFile(t, envPath, "TEST_SKIP_EMPTY=val\n\n\nTEST_AFTER_EMPTY=after\n")
 
 	t.Cleanup(func() {
-		os.Unsetenv("TEST_SKIP_EMPTY")
-		os.Unsetenv("TEST_AFTER_EMPTY")
+		_ = os.Unsetenv("TEST_SKIP_EMPTY")
+		_ = os.Unsetenv("TEST_AFTER_EMPTY")
 	})
 
 	err := LoadDotEnv(envPath)
@@ -347,7 +347,7 @@ func TestLoadDotEnv_SkipsComments(t *testing.T) {
 	writeFile(t, envPath, "# This is a comment\nTEST_COMMENT_SKIP=val\n# Another comment\n")
 
 	t.Cleanup(func() {
-		os.Unsetenv("TEST_COMMENT_SKIP")
+		_ = os.Unsetenv("TEST_COMMENT_SKIP")
 	})
 
 	err := LoadDotEnv(envPath)
@@ -366,8 +366,8 @@ func TestLoadDotEnv_SkipsMalformedLines(t *testing.T) {
 	writeFile(t, envPath, "VALID_KEY=val\nINVALID_LINE_NO_EQUALS\nALSO_VALID=yes\n")
 
 	t.Cleanup(func() {
-		os.Unsetenv("VALID_KEY")
-		os.Unsetenv("ALSO_VALID")
+		_ = os.Unsetenv("VALID_KEY")
+		_ = os.Unsetenv("ALSO_VALID")
 	})
 
 	err := LoadDotEnv(envPath)
@@ -405,7 +405,7 @@ func TestLoadDotEnv_StripsQuotes(t *testing.T) {
 
 			// Extract key name for cleanup
 			key := strings.SplitN(tc.rawValue, "=", 2)[0]
-			t.Cleanup(func() { os.Unsetenv(key) })
+			t.Cleanup(func() { _ = os.Unsetenv(key) })
 
 			err := LoadDotEnv(envPath)
 			if err != nil {
@@ -422,7 +422,7 @@ func TestLoadDotEnv_StripsQuotes(t *testing.T) {
 func TestLoadDotEnv_DoesNotOverrideExistingEnv(t *testing.T) {
 	key := "TEST_NO_OVERRIDE"
 	t.Setenv(key, "original-value")
-	t.Cleanup(func() { os.Unsetenv(key) })
+	t.Cleanup(func() { _ = os.Unsetenv(key) })
 
 	dir := t.TempDir()
 	envPath := filepath.Join(dir, ".env")
@@ -444,7 +444,7 @@ func TestLoadDotEnv_SkipsEmptyKey(t *testing.T) {
 	writeFile(t, envPath, "=value_with_empty_key\nVALID_KEY=valid_val\n")
 
 	t.Cleanup(func() {
-		os.Unsetenv("VALID_KEY")
+		_ = os.Unsetenv("VALID_KEY")
 	})
 
 	err := LoadDotEnv(envPath)
@@ -462,7 +462,7 @@ func TestLoadDotEnv_TrimsWhitespace(t *testing.T) {
 	envPath := filepath.Join(dir, ".env")
 	writeFile(t, envPath, "  TEST_TRIM_KEY  =   trimmed_value  \n")
 
-	t.Cleanup(func() { os.Unsetenv("TEST_TRIM_KEY") })
+	t.Cleanup(func() { _ = os.Unsetenv("TEST_TRIM_KEY") })
 
 	err := LoadDotEnv(envPath)
 	if err != nil {
@@ -490,7 +490,7 @@ func TestLoadDotEnv_ValueWithEqualsSign(t *testing.T) {
 	envPath := filepath.Join(dir, ".env")
 	writeFile(t, envPath, "TEST_EQ_SIGN=key=with=equals\n")
 
-	t.Cleanup(func() { os.Unsetenv("TEST_EQ_SIGN") })
+	t.Cleanup(func() { _ = os.Unsetenv("TEST_EQ_SIGN") })
 
 	err := LoadDotEnv(envPath)
 	if err != nil {
@@ -590,13 +590,13 @@ func TestMergeConfig_ZeroValuesDoNotOverride(t *testing.T) {
 	dst := DefaultConfig()
 	src := &Config{
 		LLM: LLMConfig{
-			Model:     "",        // zero value for string
-			MaxTokens: 0,         // zero value for int
-			BaseURL:   "",        // zero value for string
+			Model:     "", // zero value for string
+			MaxTokens: 0,  // zero value for int
+			BaseURL:   "", // zero value for string
 		},
 		Agent: AgentConfig{
-			MaxIterations: 0,     // zero value for int
-			Timeout:       0,     // zero value for time.Duration
+			MaxIterations: 0, // zero value for int
+			Timeout:       0, // zero value for time.Duration
 		},
 	}
 

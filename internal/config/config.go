@@ -165,7 +165,7 @@ func LoadDotEnv(path string) error {
 
 		// Only set if not already set in environment.
 		if _, exists := os.LookupEnv(key); !exists {
-			os.Setenv(key, value)
+			_ = os.Setenv(key, value)
 		}
 	}
 

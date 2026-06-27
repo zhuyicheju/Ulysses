@@ -443,8 +443,100 @@ class TestConcurrentProcessing:
 
 
 # =============================================================================
-# Round 7: __main__.py integration (subprocess smoke test)
+# Round 7: Graceful shutdown via shutdown() method
 # =============================================================================
+
+
+class TestGracefulShutdown:
+    """Tests that the server can be gracefully shut down via shutdown()."""
+
+    def test_shutdown_stops_serve_forever(self):
+        """serve_forever returns when shutdown() is called, even with stdin still open."""
+        import os
+        import io
+
+        server = create_server_with_ping()
+
+        # Create a pipe to simulate stdin that stays open (no EOF).
+        r_fd, w_fd = os.pipe()
+        mock_stdin = os.fdopen(r_fd, "r")
+        original_stdin = sys.stdin
+
+        # Capture stdout so response writes don't fail.
+        output = io.StringIO()
+        original_stdout = sys.stdout
+        sys.stdout = output
+
+        sys.stdin = mock_stdin
+        try:
+            async def _run():
+                serve_task = asyncio.create_task(server.serve_forever())
+                # Give the server a moment to enter its read loop.
+                await asyncio.sleep(0.2)
+
+                # Shutdown should unblock serve_forever and let it return.
+                server.shutdown()
+                await asyncio.wait_for(serve_task, timeout=3.0)
+
+            asyncio.run(_run())
+        finally:
+            sys.stdin = original_stdin
+            sys.stdout = original_stdout
+            os.close(w_fd)
+            mock_stdin.close()
+
+    def test_shutdown_drains_pending_requests(self):
+        """In-progress requests complete before serve_forever returns after shutdown."""
+        import os
+        import io
+
+        # Handler that takes a short delay — enough to be "in-flight" at shutdown.
+        async def slow_handler(params: dict | None = None) -> str:
+            await asyncio.sleep(0.3)
+            return "done"
+
+        server = RPCServer()
+        server.register("slow", slow_handler)
+
+        # Create a pipe: write a request line then keep stdin open.
+        r_fd, w_fd = os.pipe()
+        mock_stdin = os.fdopen(r_fd, "r")
+        original_stdin = sys.stdin
+
+        output = io.StringIO()
+        original_stdout = sys.stdout
+        sys.stdout = output
+
+        # Write a single request into the pipe so the server reads it.
+        request_line = make_request(1, "slow", {}) + "\n"
+        os.write(w_fd, request_line.encode())
+
+        sys.stdin = mock_stdin
+        try:
+            async def _run():
+                serve_task = asyncio.create_task(server.serve_forever())
+                # Give the server time to read the request and start processing.
+                await asyncio.sleep(0.1)
+
+                # Shutdown while the handler is still in-flight.
+                server.shutdown()
+                await asyncio.wait_for(serve_task, timeout=3.0)
+
+            asyncio.run(_run())
+        finally:
+            sys.stdin = original_stdin
+            sys.stdout = original_stdout
+            os.close(w_fd)
+            mock_stdin.close()
+
+        # The pending request must have completed — verify the response.
+        lines = [l for l in output.getvalue().strip().split("\n") if l]
+        assert len(lines) == 1, (
+            f"expected 1 response after shutdown drain, got {len(lines)}"
+        )
+        response = json.loads(lines[0])
+        assert response["id"] == 1
+        assert response["result"] == "done"
 
 
 class TestMainIntegration:
@@ -522,6 +614,62 @@ class TestMainIntegration:
             ids.append(resp["id"])
 
         assert sorted(ids) == [1, 2, 3]
+
+    def test_sigterm_graceful_shutdown(self):
+        """SIGTERM triggers graceful shutdown: in-flight request completes, exit code 0."""
+        import os
+        import signal
+        import subprocess
+        import time
+
+        proc = subprocess.Popen(
+            [sys.executable, "-m", "ulysses_ai", "--log-level", "error"],
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+        )
+
+        try:
+            # Let the subprocess start up and register its signal handler.
+            time.sleep(0.3)
+
+            # Write a ping request to stdin (keep it open so it's not EOF).
+            request = make_request(1, "ping", {}) + "\n"
+            proc.stdin.write(request)
+            proc.stdin.flush()
+
+            # Give the server a moment to pick up the request via select.
+            time.sleep(0.1)
+
+            # Send SIGTERM while the server is still running.
+            # The server must drain in-flight requests before exiting.
+            proc.send_signal(signal.SIGTERM)
+
+            # Wait for graceful exit.
+            stdout, stderr = proc.communicate(timeout=5)
+        except subprocess.TimeoutExpired:
+            proc.kill()
+            stdout, stderr = proc.communicate()
+            raise
+
+        # The in-flight request must have completed — the server drains
+        # pending tasks before exiting, even on SIGTERM.
+        lines = [l for l in stdout.strip().split("\n") if l]
+        assert len(lines) >= 1, (
+            f"expected at least 1 response (in-flight ping), "
+            f"got {len(lines)} lines, stdout: {stdout!r}, stderr: {stderr!r}"
+        )
+        response = json.loads(lines[0])
+        assert response["jsonrpc"] == "2.0"
+        assert response["id"] == 1
+        assert response["result"] == "pong"
+
+        # Graceful shutdown → exit code 0.
+        assert proc.returncode == 0, (
+            f"expected exit code 0 for graceful shutdown, "
+            f"got {proc.returncode}, stderr: {stderr!r}"
+        )
 
 
 # =============================================================================

@@ -12,6 +12,7 @@ import functools
 import inspect
 import json
 import logging
+import select
 import sys
 from typing import Any, Awaitable, Callable
 from pydantic import ValidationError
@@ -41,36 +42,62 @@ class RPCServer:
     def __init__(self) -> None:
         self._handlers: dict[str, Handler] = {}
         self._write_lock = asyncio.Lock()
+        self._shutdown_event = asyncio.Event()
 
     def register(self, method: str, handler: Handler) -> None:
         """Register a handler for the given method name."""
         self._handlers[method] = handler
         logger.debug("registered handler", extra={"method": method})
 
+    def shutdown(self) -> None:
+        """Signal the server to stop accepting new requests and shut down.
+
+        Safe to call from any thread. The server will finish in-progress
+        requests before ``serve_forever`` returns.
+        """
+        self._shutdown_event.set()
+
     async def serve_forever(self) -> None:
-        """Read requests from stdin in a loop until EOF.
+        """Read requests from stdin in a loop until EOF or shutdown.
 
-        Each request is handled concurrently via asyncio.create_task.
-        Stdout writes are serialized via a lock to prevent interleaving.
+        Uses ``select.select`` with a short timeout to poll stdin so the
+        shutdown event is checked regularly instead of blocking forever on
+        ``readline``.  Each request is handled concurrently; stdout writes
+        are serialized via a lock.
 
-        When stdin closes (EOF), all pending tasks are drained before
-        returning, ensuring every request receives a response.
+        When stdin closes (EOF) or :meth:`shutdown` is called, all pending
+        tasks are drained before returning so every request receives a
+        response.
         """
         logger.info("JSON-RPC server listening on stdin")
         loop = asyncio.get_event_loop()
         pending: set[asyncio.Task[None]] = set()
+
         while True:
-            line = await loop.run_in_executor(None, sys.stdin.readline)
-            if not line:
-                break  # EOF — parent process closed stdin
+            # Poll stdin with a short timeout so we can check the shutdown
+            # event regularly.  select() is thread-safe and works with the
+            # stdin file descriptor.
+            ready, _, _ = await loop.run_in_executor(
+                None, lambda: select.select([sys.stdin], [], [], 0.5)
+            )
+            if ready:
+                # Data available on stdin — always consume it even if
+                # shutdown was signalled, so we don't lose a request
+                # that arrived concurrently with SIGTERM.
+                line = sys.stdin.readline()
+                if not line:
+                    break  # EOF — parent process closed stdin
 
-            line = line.strip()
-            if not line:
-                continue
+                line = line.strip()
+                if not line:
+                    continue
 
-            task = asyncio.create_task(self._handle_line(line))
-            pending.add(task)
-            task.add_done_callback(pending.discard)
+                task = asyncio.create_task(self._handle_line(line))
+                pending.add(task)
+                task.add_done_callback(pending.discard)
+            elif self._shutdown_event.is_set():
+                # No data available and shutdown was requested — exit.
+                break
 
         # Drain all pending tasks so no response is lost on shutdown.
         if pending:

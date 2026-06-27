@@ -13,6 +13,7 @@ import argparse
 import asyncio
 import json
 import logging
+import signal
 import sys
 
 from ulysses_ai import __version__
@@ -62,14 +63,23 @@ def main() -> None:
         logger.info("starting ulysses-ai JSON-RPC server",
                     extra={"log_level": args.log_level, "log_format": args.log_format})
 
-        # Start the JSON-RPC over stdio server loop
+        # Start the JSON-RPC over stdio server loop.
+        # Use an explicit event loop so we can register a SIGTERM handler
+        # for graceful shutdown — completing in-flight requests before exiting.
         server = RPCServer()
         register_all(
             server,
             base_url=args.base_url,
             api_key=args.api_key,
         )
-        asyncio.run(server.serve_forever())
+
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        loop.add_signal_handler(signal.SIGTERM, server.shutdown)
+        try:
+            loop.run_until_complete(server.serve_forever())
+        finally:
+            loop.close()
     except Exception:
         # Log the full traceback if the logging system is available.
         # If logging itself failed, the inner try/except prevents a second error.

@@ -37,7 +37,7 @@ class RPCServer:
 
     def __init__(self) -> None:
         self._handlers: dict[str, Handler] = {}
-        self._write_lock: asyncio.Lock | None = None
+        self._write_lock = asyncio.Lock()
 
     def register(self, method: str, handler: Handler) -> None:
         """Register a handler for the given method name."""
@@ -51,7 +51,6 @@ class RPCServer:
         Stdout writes are serialized via a lock to prevent interleaving.
         """
         logger.info("JSON-RPC server listening on stdin")
-        self._write_lock = asyncio.Lock()
         loop = asyncio.get_event_loop()
         while True:
             line = await loop.run_in_executor(None, sys.stdin.readline)
@@ -64,16 +63,15 @@ class RPCServer:
 
             asyncio.create_task(self._handle_line(line))
 
-    def _write_response(self, response: JSONRPCResponse | JSONRPCErrorResponse) -> None:
+    async def _write_response(self, response: JSONRPCResponse | JSONRPCErrorResponse) -> None:
         """Write a response to stdout as a single JSON line."""
-        json_str = response.model_dump_json(exclude_none=True)
+        data = response.model_dump(exclude_none=True)
         # JSON-RPC spec requires `id` in all responses, even when null (parse errors)
         if isinstance(response, JSONRPCErrorResponse) and response.id is None:
-            data = json.loads(json_str)
             data["id"] = None
-            json_str = json.dumps(data)
-        sys.stdout.write(json_str + "\n")
-        sys.stdout.flush()
+        async with self._write_lock:
+            sys.stdout.write(json.dumps(data) + "\n")
+            sys.stdout.flush()
 
     async def _handle_line(self, line: str) -> None:
         """Parse a single JSON line and dispatch to the registered handler.
@@ -96,7 +94,7 @@ class RPCServer:
             )
             if is_json_error:
                 logger.error("parse error", extra={"error": str(req_err)})
-                self._write_response(
+                await self._write_response(
                     JSONRPCErrorResponse(
                         id=None,
                         error=JSONRPCError(
@@ -113,7 +111,7 @@ class RPCServer:
             except ValidationError:
                 # Neither a valid request nor a valid notification → Invalid Request
                 logger.error("invalid request", extra={"error": str(req_err)})
-                self._write_response(
+                await self._write_response(
                     JSONRPCErrorResponse(
                         id=None,
                         error=JSONRPCError(
@@ -155,7 +153,7 @@ class RPCServer:
         handler = self._handlers.get(method)
         if handler is None:
             logger.warning("method not found", extra={"method": method})
-            self._write_response(
+            await self._write_response(
                 JSONRPCErrorResponse(
                     id=req_id,
                     error=JSONRPCError(
@@ -168,12 +166,12 @@ class RPCServer:
 
         try:
             result = await handler(params)
-            self._write_response(
+            await self._write_response(
                 JSONRPCResponse(id=req_id, result=result)
             )
         except Exception as e:
             logger.error("handler error", extra={"method": method, "error": str(e)})
-            self._write_response(
+            await self._write_response(
                 JSONRPCErrorResponse(
                     id=req_id,
                     error=JSONRPCError(

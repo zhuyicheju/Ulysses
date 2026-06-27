@@ -15,3 +15,4 @@ build/
 .venv/
 *.egg
 .pytest_cache/
+py-ai/.ruff_cache

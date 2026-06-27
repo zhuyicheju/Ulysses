@@ -8,8 +8,6 @@ import logging
 import re
 import sys
 
-import pytest
-
 from ulysses_ai.logging import JSONFormatter, setup_logging, _parse_level
 
 

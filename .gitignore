@@ -1,5 +1,8 @@
 .claude
 
+# Build output
+bin/
+
 # Python
 __pycache__/
 *.pyc

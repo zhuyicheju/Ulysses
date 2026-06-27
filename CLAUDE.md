@@ -11,5 +11,5 @@
 | 组件 | 版本 |
 |------|------|
 | Go | 1.26.0 |
-| Python（ulysses） | 3.12 |
+| Python（conda activate ulysses） | 3.12 |
 | SQLite | 3.51.2 |

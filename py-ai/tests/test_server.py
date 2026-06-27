@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import sys
 
 import pytest
@@ -473,6 +474,8 @@ class TestMainIntegration:
         lines = [l for l in stdout.strip().split("\n") if l]
         assert len(lines) >= 1, f"expected at least 1 response, got stdout: {stdout!r}, stderr: {stderr!r}"
 
+        assert proc.returncode == 0, f"subprocess exited with code {proc.returncode}, stderr: {stderr!r}"
+
         response = json.loads(lines[0])
         assert response["jsonrpc"] == "2.0"
         assert response["id"] == 1
@@ -505,7 +508,12 @@ class TestMainIntegration:
             raise
 
         lines = [l for l in stdout.strip().split("\n") if l]
-        assert len(lines) == 3, f"expected 3 responses, got {len(lines)}: {stdout!r}"
+        assert len(lines) == 3, (
+            f"expected 3 responses, got {len(lines)}: "
+            f"stdout: {stdout!r}, stderr: {stderr!r}"
+        )
+
+        assert proc.returncode == 0, f"subprocess exited with code {proc.returncode}, stderr: {stderr!r}"
 
         ids = []
         for line in lines:
@@ -514,3 +522,88 @@ class TestMainIntegration:
             ids.append(resp["id"])
 
         assert sorted(ids) == [1, 2, 3]
+
+
+# =============================================================================
+# Round 8: __main__.py startup failure handling
+# =============================================================================
+
+
+class TestMainStartupFailure:
+    """Tests that __main__.main() handles startup failures gracefully.
+
+    When setup_logging or register_all raises, main() must:
+    - Write a JSON-RPC error response to stdout
+    - Exit with code 1
+    """
+
+    def setup_method(self):
+        """Clear any logging handlers left by other tests."""
+        root = logging.getLogger()
+        root.handlers.clear()
+        root.setLevel(logging.WARNING)
+
+    def teardown_method(self):
+        """Clean up logging handlers."""
+        root = logging.getLogger()
+        root.handlers.clear()
+
+    def test_setup_logging_failure_writes_error_response(self):
+        """When setup_logging fails, main() writes a JSON-RPC error and exits with code 1."""
+        import io
+        from unittest.mock import patch
+
+        from ulysses_ai.__main__ import main
+        from ulysses_ai.protocol import INTERNAL_ERROR
+
+        test_args = ["ulysses-ai", "--log-level", "error"]
+        output = io.StringIO()
+
+        with (
+            patch("sys.argv", test_args),
+            patch("sys.stdout", output),
+            patch(
+                "ulysses_ai.__main__.setup_logging",
+                side_effect=RuntimeError("logging config failed"),
+            ),
+            pytest.raises(SystemExit) as exc_info,
+        ):
+            main()
+
+        assert exc_info.value.code == 1
+        raw = output.getvalue().strip()
+        assert raw, "expected a JSON-RPC error response on stdout"
+        response = json.loads(raw)
+        assert response["jsonrpc"] == "2.0"
+        assert response["id"] is None
+        assert response["error"]["code"] == INTERNAL_ERROR
+
+    def test_register_all_failure_writes_error_response(self):
+        """When register_all fails, main() writes a JSON-RPC error and exits with code 1."""
+        import io
+        from unittest.mock import patch
+
+        from ulysses_ai.__main__ import main
+        from ulysses_ai.protocol import INTERNAL_ERROR
+
+        test_args = ["ulysses-ai", "--log-level", "error"]
+        output = io.StringIO()
+
+        with (
+            patch("sys.argv", test_args),
+            patch("sys.stdout", output),
+            patch(
+                "ulysses_ai.__main__.register_all",
+                side_effect=ValueError("bad API key"),
+            ),
+            pytest.raises(SystemExit) as exc_info,
+        ):
+            main()
+
+        assert exc_info.value.code == 1
+        raw = output.getvalue().strip()
+        assert raw, "expected a JSON-RPC error response on stdout"
+        response = json.loads(raw)
+        assert response["jsonrpc"] == "2.0"
+        assert response["id"] is None
+        assert response["error"]["code"] == INTERNAL_ERROR

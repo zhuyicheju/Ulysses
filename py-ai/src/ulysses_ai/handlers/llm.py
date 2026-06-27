@@ -36,9 +36,9 @@ from ulysses_ai.protocol import (
     CONTEXT_LENGTH_EXCEEDED,
     INTERNAL_ERROR,
     INVALID_PARAMS,
-    JSONRPCException,
     MODEL_NOT_AVAILABLE,
     RATE_LIMIT_EXCEEDED,
+    JSONRPCException,
 )
 
 logger = logging.getLogger(__name__)
@@ -157,14 +157,15 @@ async def chat(params: dict[str, Any] | None) -> dict[str, Any]:
             data={"type": "PermissionDeniedError", "detail": str(e)},
         ) from e
     except BadRequestError as e:
-        # Detect context-length-exceeded via body type or message content
         body = getattr(e, "body", None)
-        if body and isinstance(body, dict) and body.get("type") == "context_length_exceeded":
-            raise JSONRPCException(
-                CONTEXT_LENGTH_EXCEEDED,
-                "Context length exceeded",
-                data={"type": "BadRequestError", "detail": str(e)},
-            ) from e
+        if body and isinstance(body, dict):
+            error_obj = body.get("error", {})
+            if isinstance(error_obj, dict) and error_obj.get("type") == "context_length_exceeded":
+                raise JSONRPCException(
+                    CONTEXT_LENGTH_EXCEEDED,
+                    "Context length exceeded",
+                    data={"type": "BadRequestError", "detail": str(e)},
+                ) from e
         err_msg = str(e).lower()
         if any(kw in err_msg for kw in ("context", "too long", "too large")):
             raise JSONRPCException(

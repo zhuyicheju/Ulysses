@@ -528,13 +528,16 @@ class TestChatIntegration:
         import os
         import subprocess
         import sys
+        from dotenv import load_dotenv
+
+        load_dotenv()
 
         api_key = os.environ.get("ANTHROPIC_API_KEY")
         if not api_key:
             pytest.skip("ANTHROPIC_API_KEY not set")
 
         proc = subprocess.Popen(
-            [sys.executable, "-m", "ulysses_ai", "--log-level", "error"],
+            [sys.executable, "-m", "ulysses_ai", "--log-level", "error", "--base-url", "https://api.deepseek.com/anthropic", "--api-key", api_key],
             stdin=subprocess.PIPE,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
@@ -542,7 +545,7 @@ class TestChatIntegration:
         )
 
         request = make_request(1, "chat", {
-            "model": "claude-sonnet-4-6",
+            "model": "deepseek-v4-flash",
             "messages": [{"role": "user", "content": "Reply with exactly: Hello"}],
             "max_tokens": 50,
         }) + "\n"
@@ -552,12 +555,30 @@ class TestChatIntegration:
         except subprocess.TimeoutExpired:
             proc.kill()
             stdout, stderr = proc.communicate()
-            raise
+            raise AssertionError(
+                f"subprocess timed out after 30s\n"
+                f"stdout: {stdout!r}\n"
+                f"stderr: {stderr!r}\n"
+            )
+
+        # Diagnostic checks before JSON parsing — provide context on failure.
+        assert stdout.strip(), (
+            f"subprocess produced no stdout (exit code {proc.returncode})\n"
+            f"stderr: {stderr!r}"
+        )
+        assert proc.returncode == 0, (
+            f"subprocess exited with code {proc.returncode}\n"
+            f"stdout: {stdout!r}\n"
+            f"stderr: {stderr!r}"
+        )
 
         response = json.loads(stdout.strip())
         assert response["jsonrpc"] == "2.0"
         assert response["id"] == 1
-        assert "error" not in response, f"Unexpected error: {response.get('error')}"
+        assert "error" not in response, (
+            f"Unexpected error: {response.get('error')}\n"
+            f"stderr: {stderr!r}"
+        )
         assert response["result"]["type"] == "message"
         assert response["result"]["role"] == "assistant"
         assert "content" in response["result"]

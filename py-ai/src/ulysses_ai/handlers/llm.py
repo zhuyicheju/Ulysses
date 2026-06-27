@@ -138,76 +138,11 @@ async def chat(params: dict[str, Any] | None) -> dict[str, Any]:
 
     try:
         response = await client.messages.create(**kwargs)
-    except RateLimitError as e:
+    except Exception as e:
+        error_code, error_message = _map_api_error(e)
         raise JSONRPCException(
-            RATE_LIMIT_EXCEEDED,
-            "Rate limit exceeded",
-            data={"type": "RateLimitError", "detail": str(e)},
-        ) from e
-    except AuthenticationError as e:
-        raise JSONRPCException(
-            AUTH_ERROR,
-            "Authentication failed",
-            data={"type": "AuthenticationError", "detail": str(e)},
-        ) from e
-    except PermissionDeniedError as e:
-        raise JSONRPCException(
-            AUTH_ERROR,
-            "Permission denied",
-            data={"type": "PermissionDeniedError", "detail": str(e)},
-        ) from e
-    except BadRequestError as e:
-        body = getattr(e, "body", None)
-        if body and isinstance(body, dict):
-            error_obj = body.get("error", {})
-            if isinstance(error_obj, dict) and error_obj.get("type") == "context_length_exceeded":
-                raise JSONRPCException(
-                    CONTEXT_LENGTH_EXCEEDED,
-                    "Context length exceeded",
-                    data={"type": "BadRequestError", "detail": str(e)},
-                ) from e
-        err_msg = str(e).lower()
-        if any(kw in err_msg for kw in ("context", "too long", "too large")):
-            raise JSONRPCException(
-                CONTEXT_LENGTH_EXCEEDED,
-                "Context length exceeded",
-                data={"type": "BadRequestError", "detail": str(e)},
-            ) from e
-        raise JSONRPCException(
-            INVALID_PARAMS,
-            f"Invalid parameters: {e}",
-            data={"type": "BadRequestError", "detail": str(e)},
-        ) from e
-    except NotFoundError as e:
-        raise JSONRPCException(
-            MODEL_NOT_AVAILABLE,
-            f"Model not available: {e}",
-            data={"type": "NotFoundError", "detail": str(e)},
-        ) from e
-    except APITimeoutError as e:
-        raise JSONRPCException(
-            API_TIMEOUT,
-            "API request timed out",
-            data={"type": "APITimeoutError", "detail": str(e)},
-        ) from e
-    except APIConnectionError as e:
-        raise JSONRPCException(
-            API_TIMEOUT,
-            "API connection error",
-            data={"type": "APIConnectionError", "detail": str(e)},
-        ) from e
-    except InternalServerError as e:
-        raise JSONRPCException(
-            INTERNAL_ERROR,
-            f"Anthropic API internal error: {e}",
-            data={"type": "InternalServerError", "detail": str(e)},
-        ) from e
-    except APIStatusError as e:
-        # Catch-all for other HTTP-level errors not covered above
-        raise JSONRPCException(
-            INTERNAL_ERROR,
-            f"API error (HTTP {e.status_code}): {e}",
-            data={"type": "APIStatusError", "detail": str(e)},
+            error_code, error_message,
+            data={"type": type(e).__name__, "detail": str(e)},
         ) from e
 
     # Anthropic SDK response models are Pydantic v2 BaseModel subclasses.

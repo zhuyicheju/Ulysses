@@ -573,6 +573,11 @@ class TestChatIntegration:
         )
 
         response = json.loads(stdout.strip())
+
+        print("\n=== Response ===")
+        print(json.dumps(response, indent=2))
+        print("================\n")
+        
         assert response["jsonrpc"] == "2.0"
         assert response["id"] == 1
         assert "error" not in response, (

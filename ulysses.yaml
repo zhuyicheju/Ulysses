@@ -3,8 +3,8 @@
 # See docs/plan.md for full specification.
 
 llm:
-  model: claude-sonnet-4-6
-  base_url: https://api.anthropic.com
+  model: deepseek-v4-flash
+  base_url: https://api.deepseek.com/anthropic
   # api_key: set via ULYSSES_LLM_API_KEY env var or .env file
   max_tokens: 4096
 

@@ -194,19 +194,21 @@ Go 侧读取 stdout 的每一行：若包含 `method` 字段 → 通知（流块
 - 注册 `ping` 方法返回 `"pong"` 用于连通性测试
 - **可运行检查点**：手动测试——向 stdin 写入 `{"jsonrpc":"2.0","id":1,"method":"ping"}`，stdout 返回 `{"jsonrpc":"2.0","id":1,"result":"pong"}`
 
-### Task 2.3：Python 侧——LLM 客户端方法
+### Task 2.3.1：Python 侧——LLM chat
 
 - 实现于 `ulysses_ai/handlers/llm.py`：
-  - `chat(params) -> result`：非流式对话补全
-    - 输入：`{model, messages, tools?, max_tokens?, temperature?}`
-    - 输出：`{content, tool_calls?, usage: {prompt_tokens, completion_tokens}}`
-  - `chat_stream(params) -> [stream_events]`：流式对话补全
-    - 每个块作为 JSON-RPC 通知（无 id）写入 stdout：
-      `{"jsonrpc":"2.0","method":"stream/chunk","params":{...}}`
-    - 最后一块标记：`{"jsonrpc":"2.0","method":"stream/done","params":{...}}`
-- 使用 `openai` Python SDK（同时支持 OpenAI、DeepSeek、Claude 等兼容端点）
+  - `chat(params) -> result`：非流式对话补全，见api-spec
+- 使用 `Anthropic` Python SDK
 - 错误处理：API 错误 → JSON-RPC 错误响应
-- **可运行检查点**：注册两个方法；使用 mock LLM 服务端测试通过
+- **可运行检查点**：注册；使用 mock LLM 服务端测试通过。加入系统测试，读取.env下配置进行真实api发送
+
+
+### Task 2.3.1：Python 侧——LLM chat_stream
+- 实现于 `ulysses_ai/handlers/llm.py`：
+  - `chat_stream(params) -> [stream_events]`：流式对话补全,见api-spec
+- 使用 `Anthropic` Python SDK
+- 错误处理：API 错误 → JSON-RPC 错误响应
+- **可运行检查点**：注册；使用 mock LLM 服务端测试通过。加入系统测试，读取.env下配置进行真实api发送
 
 ### Task 2.4：Python 入口（主循环）
 

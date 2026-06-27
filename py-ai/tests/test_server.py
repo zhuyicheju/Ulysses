@@ -12,12 +12,16 @@ import sys
 import pytest
 
 from ulysses_ai.protocol import (
+    AUTH_ERROR,
+    API_TIMEOUT,
     JSONRPCErrorResponse,
+    JSONRPCException,
     JSONRPCResponse,
-    PARSE_ERROR,
-    METHOD_NOT_FOUND,
-    INTERNAL_ERROR,
     INVALID_REQUEST,
+    INTERNAL_ERROR,
+    METHOD_NOT_FOUND,
+    PARSE_ERROR,
+    RATE_LIMIT_EXCEEDED,
 )
 from ulysses_ai.server import RPCServer
 
@@ -232,6 +236,84 @@ class TestNotificationHandling:
         captured = capsys.readouterr()
         response = json.loads(captured.out.strip())
         assert response["error"]["code"] == INVALID_REQUEST
+
+
+# =============================================================================
+# Round 5.5: JSONRPCException — typed error propagation from handlers
+# =============================================================================
+
+
+class TestJSONRPCExceptionHandling:
+    """Tests that JSONRPCException from handlers produces correct error codes."""
+
+    def test_jsonrpc_exception_returns_correct_error_code(self, capsys):
+        """Handler raising JSONRPCException returns the specified error code."""
+        async def auth_handler(params: dict | None = None):
+            raise JSONRPCException(AUTH_ERROR, "Invalid API key")
+
+        server = RPCServer()
+        server.register("test_auth", auth_handler)
+        line = make_request(1, "test_auth")
+
+        asyncio.run(server._handle_line(line))
+
+        captured = capsys.readouterr()
+        response = json.loads(captured.out.strip())
+        assert response["error"]["code"] == AUTH_ERROR
+        assert "Invalid API key" in response["error"]["message"]
+        assert "result" not in response
+
+    def test_jsonrpc_exception_with_data_includes_data(self, capsys):
+        """JSONRPCException with data includes data in error response."""
+        async def rate_limit_handler(params: dict | None = None):
+            raise JSONRPCException(
+                RATE_LIMIT_EXCEEDED,
+                "Rate limited",
+                data={"type": "RateLimitError", "retry_after": 30},
+            )
+
+        server = RPCServer()
+        server.register("test_rate", rate_limit_handler)
+        line = make_request(1, "test_rate")
+
+        asyncio.run(server._handle_line(line))
+
+        captured = capsys.readouterr()
+        response = json.loads(captured.out.strip())
+        assert response["error"]["code"] == RATE_LIMIT_EXCEEDED
+        assert response["error"]["data"]["retry_after"] == 30
+        assert response["error"]["data"]["type"] == "RateLimitError"
+
+    def test_jsonrpc_exception_data_excluded_when_none(self, capsys):
+        """JSONRPCException without data omits data field (exclude_none)."""
+        async def handler(params: dict | None = None):
+            raise JSONRPCException(API_TIMEOUT, "Timeout")
+
+        server = RPCServer()
+        server.register("test_timeout", handler)
+        line = make_request(1, "test_timeout")
+
+        asyncio.run(server._handle_line(line))
+
+        captured = capsys.readouterr()
+        response = json.loads(captured.out.strip())
+        assert response["error"]["code"] == API_TIMEOUT
+        assert "data" not in response["error"]
+
+    def test_non_jsonrpc_exception_still_returns_internal_error(self, capsys):
+        """Non-JSONRPCException exceptions still map to INTERNAL_ERROR."""
+        async def broken_handler(params: dict | None = None):
+            raise ValueError("something broke")
+
+        server = RPCServer()
+        server.register("broken", broken_handler)
+        line = make_request(1, "broken")
+
+        asyncio.run(server._handle_line(line))
+
+        captured = capsys.readouterr()
+        response = json.loads(captured.out.strip())
+        assert response["error"]["code"] == INTERNAL_ERROR
 
 
 # =============================================================================

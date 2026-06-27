@@ -67,3 +67,24 @@ CONTEXT_LENGTH_EXCEEDED = -32001
 AUTH_ERROR = -32002
 API_TIMEOUT = -32003
 MODEL_NOT_AVAILABLE = -32004
+
+
+class JSONRPCException(Exception):
+    """Exception carrying a JSON-RPC error code for structured error propagation.
+
+    Handlers raise this to produce specific JSON-RPC error responses
+    (e.g., AUTH_ERROR, RATE_LIMIT_EXCEEDED). The server catches it before
+    the generic Exception catch-all and writes the specified error code,
+    message, and optional data.
+    """
+
+    def __init__(
+        self,
+        code: int,
+        message: str,
+        data: dict[str, Any] | None = None,
+    ) -> None:
+        self.code = code
+        self.message = message
+        self.data = data
+        super().__init__(message)

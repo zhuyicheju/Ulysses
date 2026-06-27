@@ -61,7 +61,11 @@ def main() -> None:
 
     # Start the JSON-RPC over stdio server loop
     server = RPCServer()
-    register_all(server)
+    register_all(
+        server,
+        base_url=args.base_url,
+        api_key=args.api_key,
+    )
     asyncio.run(server.serve_forever())
 
 

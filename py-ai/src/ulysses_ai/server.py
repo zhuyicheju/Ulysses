@@ -18,6 +18,7 @@ from ulysses_ai.protocol import (
     INVALID_REQUEST,
     JSONRPCError,
     JSONRPCErrorResponse,
+    JSONRPCException,
     JSONRPCNotification,
     JSONRPCRequest,
     JSONRPCResponse,
@@ -168,6 +169,21 @@ class RPCServer:
             result = await handler(params)
             await self._write_response(
                 JSONRPCResponse(id=req_id, result=result)
+            )
+        except JSONRPCException as e:
+            logger.error(
+                "JSON-RPC error",
+                extra={"method": method, "code": e.code, "error": e.message},
+            )
+            await self._write_response(
+                JSONRPCErrorResponse(
+                    id=req_id,
+                    error=JSONRPCError(
+                        code=e.code,
+                        message=e.message,
+                        data=e.data,
+                    ),
+                )
             )
         except Exception as e:
             logger.error("handler error", extra={"method": method, "error": str(e)})

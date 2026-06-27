@@ -10,11 +10,14 @@ Otherwise starts the JSON-RPC over stdio server loop.
 from __future__ import annotations
 
 import argparse
+import asyncio
 import logging
 import sys
 
 from ulysses_ai import __version__
 from ulysses_ai.logging import setup_logging
+from ulysses_ai.server import RPCServer
+from ulysses_ai.handlers.llm import register_all
 
 
 def main() -> None:
@@ -56,9 +59,10 @@ def main() -> None:
     logger.info("starting ulysses-ai JSON-RPC server",
                 extra={"log_level": args.log_level, "log_format": args.log_format})
 
-    # TODO (Phase 2): start JSON-RPC over stdio server loop
-    print("ulysses-ai: JSON-RPC server not yet implemented", file=sys.stderr)
-    sys.exit(1)
+    # Start the JSON-RPC over stdio server loop
+    server = RPCServer()
+    register_all(server)
+    asyncio.run(server.serve_forever())
 
 
 if __name__ == "__main__":

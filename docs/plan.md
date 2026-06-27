@@ -176,14 +176,9 @@ Go 侧读取 stdout 的每一行：若包含 `method` 字段 → 通知（流块
 
 ### Task 2.1：JSON-RPC 2.0 协议定义（共享类型）
 
-- Go 和 Python 两侧分别定义 JSON-RPC 2.0 类型：
-  - `Request`：`{jsonrpc, id, method, params}`
-  - `Response`：`{jsonrpc, id, result | error}`
-  - `Notification`：`{jsonrpc, method, params}`（无 id，无响应）
-  - `Error`：`{code, message, data?}`
+- Go 和 Python 两侧分别定义 JSON-RPC 2.0 类型、标准错误码（见api-spec）
 - Go：定义于 `internal/rpc/types.go`
 - Python：定义于 `ulysses_ai/protocol.py`
-- 标准错误码：`-32700`（解析）、`-32601`（方法未找到）、`-32603`（内部错误）
 - **可运行检查点**：两端类型编译/导入通过；序列化往返测试通过
 
 ### Task 2.2：Python 侧——JSON-RPC 服务端（stdio 传输）
@@ -193,9 +188,9 @@ Go 侧读取 stdout 的每一行：若包含 `method` 字段 → 通知（流块
   - 反序列化为 `Request` 或 `Notification`
   - 按方法名分发到注册的处理器
   - 序列化 `Response` 写入 stdout（每行一个 JSON）
-  - 处理解析错误、方法未找到、处理器异常 → 返回正确的错误响应
-  - Stderr 保留给日志（绝不向 stderr 写入响应）
-- 支持并发请求处理（Python `asyncio`）
+  - 若有错误，返回正确的错误响应
+  - Stderr 保留给日志
+- 支持并发请求处理
 - 注册 `ping` 方法返回 `"pong"` 用于连通性测试
 - **可运行检查点**：手动测试——向 stdin 写入 `{"jsonrpc":"2.0","id":1,"method":"ping"}`，stdout 返回 `{"jsonrpc":"2.0","id":1,"result":"pong"}`
 

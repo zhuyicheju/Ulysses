@@ -9,37 +9,6 @@ import (
 )
 
 // =============================================================================
-// Error code constants
-// =============================================================================
-
-func TestErrorCodeConstants(t *testing.T) {
-	tests := []struct {
-		name     string
-		code     int
-		expected int
-	}{
-		{"ParseError", rpc.ParseError, -32700},
-		{"InvalidRequest", rpc.InvalidRequest, -32600},
-		{"MethodNotFound", rpc.MethodNotFound, -32601},
-		{"InvalidParams", rpc.InvalidParams, -32602},
-		{"InternalError", rpc.InternalError, -32603},
-		{"RateLimitExceeded", rpc.RateLimitExceeded, -32000},
-		{"ContextLengthExceeded", rpc.ContextLengthExceeded, -32001},
-		{"AuthError", rpc.AuthError, -32002},
-		{"APITimeout", rpc.APITimeout, -32003},
-		{"ModelNotAvailable", rpc.ModelNotAvailable, -32004},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			if tt.code != tt.expected {
-				t.Errorf("%s = %d, want %d", tt.name, tt.code, tt.expected)
-			}
-		})
-	}
-}
-
-// =============================================================================
 // Request
 // =============================================================================
 

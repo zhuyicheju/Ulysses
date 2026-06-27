@@ -1,0 +1,5 @@
+# Development dependencies for ulysses-ai
+# Install with: pip install -r requirements-dev.txt
+
+pytest>=9.0
+ruff>=0.15

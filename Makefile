@@ -1,5 +1,6 @@
 # Ulysses Agent Runtime - Build System
 # ============================================================================
+# Supports parallel builds: make -j$(nproc)
 
 # Project paths
 GO_MODULE       := github.com/zhuyicheju/ulysses
@@ -8,9 +9,12 @@ BIN_DIR         := bin
 BINARY          := $(BIN_DIR)/ulysses
 PY_DIR          := py-ai
 
-# Conda environment
-CONDA_PREFIX    := /home/zhuyicheju/miniconda3/envs/ulysses
+# Auto-detect conda environment prefix
+CONDA_EXE       := $(shell command -v conda 2>/dev/null)
+CONDA_ENV       := ulysses
+CONDA_PREFIX    := $(shell $(CONDA_EXE) env list 2>/dev/null | grep -E '^$(CONDA_ENV)[[:space:]]' | awk '{print $$NF}')
 PYTHON          := $(CONDA_PREFIX)/bin/python
+PIP_INSTALL     := $(PYTHON) -m pip install -q
 
 # Build info (injected via ldflags)
 GIT_COMMIT      := $(shell git rev-parse --short HEAD 2>/dev/null || echo "unknown")
@@ -20,7 +24,7 @@ LDFLAGS         := -s -w -X main.gitCommit=$(GIT_COMMIT) -X main.buildTime=$(BUI
 .DEFAULT_GOAL := build
 
 # ---------------------------------------------------------------------------
-# Primary targets
+# Primary targets (all support -j)
 # ---------------------------------------------------------------------------
 
 .PHONY: build
@@ -73,8 +77,8 @@ lint-go:
 .PHONY: py-deps
 py-deps:
 	@echo "Installing Python dependencies..."
-	$(PYTHON) -m pip install -e $(PY_DIR) -q
-	$(PYTHON) -m pip install pytest ruff -q
+	$(PIP_INSTALL) --no-build-isolation -e $(PY_DIR)
+	$(PIP_INSTALL) -r $(PY_DIR)/requirements-dev.txt
 
 .PHONY: test-py
 test-py: py-deps
@@ -111,13 +115,14 @@ info:
 	@echo "Binary:       $(BINARY)"
 	@echo "Git commit:   $(GIT_COMMIT)"
 	@echo "Build time:   $(BUILD_TIME)"
+	@echo "Conda env:    $(CONDA_ENV)"
 	@echo "Conda prefix: $(CONDA_PREFIX)"
 
 .PHONY: help
 help:
 	@echo "Usage: make [target]"
 	@echo ""
-	@echo "Primary targets:"
+	@echo "Primary targets (all safe for make -j):"
 	@echo "  build   - Build Go binary and verify Python dependencies"
 	@echo "  test    - Run Go tests and Python tests"
 	@echo "  lint    - Run golangci-lint and ruff"
